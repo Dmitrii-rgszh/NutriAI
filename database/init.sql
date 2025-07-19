@@ -1,9 +1,7 @@
 -- NutriAI Database Schema
--- Создание базы данных
-CREATE DATABASE nutriai;
-
--- Подключение к базе данных nutriai
-\c nutriai;
+-- Для Docker база данных уже создана, для локальной установки выполните:
+-- CREATE DATABASE nutriai;
+-- GRANT ALL PRIVILEGES ON DATABASE nutriai TO nutriai_user;
 
 -- Создание расширений
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";

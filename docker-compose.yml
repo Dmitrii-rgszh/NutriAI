@@ -4,7 +4,8 @@ services:
   postgres:
     image: postgres:14
     container_name: nutriai-db
-    network_mode: "host"
+    ports:
+      - "5433:5432"
     environment:
       POSTGRES_DB: nutriai
       POSTGRES_USER: nutriai_user
@@ -12,6 +13,8 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - nutriai-network
     restart: unless-stopped
 
   redis:
@@ -28,7 +31,7 @@ services:
     container_name: nutriai-server
     environment:
       - NODE_ENV=development
-      - DATABASE_URL=postgresql://nutriai_user:${DB_PASSWORD}@postgres:5432/nutriai
+      - DATABASE_URL=postgresql://nutriai_user:nutriai123@postgres:5432/nutriai
       - REDIS_URL=redis://redis:6379
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - CLAUDE_API_KEY=${CLAUDE_API_KEY}
