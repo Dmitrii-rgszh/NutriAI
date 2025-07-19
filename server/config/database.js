@@ -2,9 +2,13 @@ const { Pool } = require('pg');
 
 // 🗄️ PostgreSQL connection pool
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-    max: 20, // максимум подключений
+    host: 'localhost',
+    port: 5432,
+    database: 'nutriai',
+    user: 'nutriai_user',
+    password: 'nutriai123',
+    ssl: false,
+    max: 20,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 2000,
 });
