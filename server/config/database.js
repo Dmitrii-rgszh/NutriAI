@@ -1,12 +1,13 @@
+require('dotenv').config();
 const { Pool } = require('pg');
 
 // 🗄️ PostgreSQL connection pool
 const pool = new Pool({
-    host: 'localhost',
-    port: 5432,
-    database: 'nutriai',
-    user: 'nutriai_user',
-    password: 'nutriai123',
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT) || 5433,
+    database: process.env.DB_NAME || 'nutriai',
+    user: process.env.DB_USER || 'nutriai_user',
+    password: process.env.DB_PASSWORD || 'nutriai123',
     ssl: false,
     max: 20,
     idleTimeoutMillis: 30000,
