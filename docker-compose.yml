@@ -1,0 +1,22 @@
+version: '3.9'
+services:
+  api:
+    build: .
+    container_name: nutriai_api
+    environment:
+      - DATABASE_URL=sqlite:///./nutriai.db
+      - JWT_SECRET=devsecret
+      - TELEGRAM_BOT_TOKEN=dummy
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/nutriai.db:/app/backend/nutriai.db
+    restart: unless-stopped
+
+  # Optional: separate frontend container serving static (not needed with combined image)
+  # frontend:
+  #   image: nginx:alpine
+  #   volumes:
+  #     - ./frontend/dist:/usr/share/nginx/html:ro
+  #   ports:
+  #     - "5173:80"

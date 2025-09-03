@@ -1,0 +1,21 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "backend:dev",
+			"type": "shell",
+			"command": "uvicorn backend.main:app --reload --port 8000"
+		},
+		{
+			"label": "frontend:dev",
+			"type": "shell",
+			"command": "cd frontend && npm run dev"
+		}
+		,
+		{
+			"label": "full:dev",
+			"dependsOn": ["backend:dev", "frontend:dev"],
+			"dependsOrder": "parallel"
+		}
+	]
+}
