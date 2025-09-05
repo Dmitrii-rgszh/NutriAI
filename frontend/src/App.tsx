@@ -1,326 +1,331 @@
-import { useState, useEffect, useMemo } from 'react'
-import './App.css'
-import { OnboardingModal } from './components/OnboardingModal'
-import { MealFormModal } from './components/MealFormModal'
-import { Sparkline } from './components/Sparkline'
-import { Toasts } from './components/Toasts'
-import { useUIStore, useDataStore } from './store'
-import { api, logout } from './api'
-import { NavLink, Routes, Route, useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import PersonalDataStep from './components/PersonalDataStep'
+import GoalStep from './components/GoalStep'
+import ActivityStep from './components/ActivityStep'
+import HealthStep from './components/HealthStep'
 
-interface Summary { calories_target: number | null; calories_consumed: number; calories_remaining: number | null; progress_percent: number; protein_total: number; carbs_total: number; fat_total: number; message: string; meals_count: number }
+// Типы для онбординга
+type AppScreen = 'welcome' | 'onboarding' | 'dashboard'
+type OnboardingStep = 'personal' | 'goal' | 'activity' | 'health' | 'complete'
+
+export interface UserProfile {
+  // Личные данные
+  gender?: 'male' | 'female' | 'other';
+  age?: number;
+  height?: number; // см
+  weight?: number; // кг
+  
+  // Цели
+  goal?: 'lose' | 'maintain' | 'gain';
+  targetWeight?: number; // кг
+  
+  // Активность
+  activityLevel?: string;
+  activityMultiplier?: number;
+  sleepHours?: number;
+  
+  // Здоровье
+  healthConditions?: string[];
+  dietaryRestrictions?: string[];
+  allergens?: string[];
+  waterIntake?: number;
+}
 
 function App() {
-  const [apiMessage, setApiMessage] = useState('')
-  const [health, setHealth] = useState('')
-  const navigate = useNavigate()
-  const [summary, setSummary] = useState<Summary | null>(null)
-  const [loadingSummary, setLoadingSummary] = useState(false)
-  const [loadingMeals, setLoadingMeals] = useState(false)
-  const [loadingHistory, setLoadingHistory] = useState(false)
-  const [historyDays, setHistoryDays] = useState(14)
-  const [mealModalOpen, setMealModalOpen] = useState(false)
-  const [macroGoals, setMacroGoals] = useState<any | null>(null)
-  const [loadingMacros, setLoadingMacros] = useState(false)
-  const [forecast, setForecast] = useState<any | null>(null)
-  const [loadingForecast, setLoadingForecast] = useState(false)
-  const [forecastDays, setForecastDays] = useState(30)
-  const photoInputId = 'photo-upload-hidden'
-  const toggleTheme = useUIStore(s => s.toggleTheme)
-  const theme = useUIStore(s => s.theme)
-  const userProfile = useDataStore(s => s.user)
-  const meals = useDataStore(s => s.meals)
-  const setMeals = useDataStore(s => s.setMeals)
-  const updateMealState = useDataStore(s => s.updateMeal)
-  const removeMeal = useDataStore(s => s.removeMeal)
-  const history = useDataStore(s => s.history)
-  const setHistory = useDataStore(s => s.setHistory)
-  const pushToast = useDataStore(s => s.pushToast)
-
-  useEffect(() => { document.documentElement.classList.toggle('light', theme==='light') }, [theme])
-  useEffect(() => {
-    // @ts-ignore
-    const tg = (window as any).Telegram?.WebApp
-    if (tg?.initData && !userProfile) api.authTelegram(tg.initData).catch(()=>{})
-  }, [userProfile])
+  const [isLoaded, setIsLoaded] = useState(false)
+  const [currentScreen, setCurrentScreen] = useState<AppScreen>('welcome')
+  const [onboardingStep, setOnboardingStep] = useState<OnboardingStep>('personal')
+  const [userProfile, setUserProfile] = useState<UserProfile>({})
 
   useEffect(() => {
-    fetch('http://localhost:8000/')
-      .then(res => res.json())
-      .then(data => setApiMessage(data.message))
-      .catch(() => setApiMessage('Ошибка подключения'))
-    fetch('http://localhost:8000/health')
-      .then(res => res.json())
-      .then(data => setHealth(data.status === 'healthy' ? 'OK' : 'Проблема'))
-      .catch(() => setHealth('Ошибка'))
+    setIsLoaded(true)
   }, [])
 
-  const fetchSummary = () => {
-    if(!userProfile) return
-    setLoadingSummary(true)
-    api.summary(userProfile.telegram_id)
-      .then((data: any) => setSummary(data as Summary))
-      .catch(()=> setSummary(null))
-      .finally(()=> setLoadingSummary(false))
-  }
-  const loadMeals = () => { setLoadingMeals(true); api.listMeals().then((data:any)=> setMeals(data)).catch(()=> pushToast('Ошибка загрузки блюд','error')).finally(()=> setLoadingMeals(false)) }
-  const loadHistory = (days=historyDays) => { setLoadingHistory(true); api.history(days).then((d:any)=> setHistory(d.days || [])).catch(()=> pushToast('Ошибка истории','error')).finally(()=> setLoadingHistory(false)) }
-  useEffect(()=>{ if(userProfile){ fetchSummary(); loadMeals(); loadHistory(historyDays); } }, [userProfile, historyDays])
-  useEffect(()=>{ if(userProfile){
-    setLoadingMacros(true); api.macroGoals().then(setMacroGoals).catch(()=> setMacroGoals(null)).finally(()=> setLoadingMacros(false))
-  } }, [userProfile])
-  useEffect(()=>{ if(userProfile){
-    setLoadingForecast(true); api.forecastWeight(forecastDays).then(setForecast).catch(()=> setForecast(null)).finally(()=> setLoadingForecast(false))
-  } }, [userProfile, forecastDays])
-
-  const progressCircle = (percent:number) => {
-    const radius = 54; const circ = 2 * Math.PI * radius; const offset = circ - (percent/100)*circ
-    return (
-      <svg width={130} height={130} className="progress-ring">
-        <defs>
-          <linearGradient id="ring" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#4ade80" />
-            <stop offset="60%" stopColor="#2dd4bf" />
-            <stop offset="100%" stopColor="#60a5fa" />
-          </linearGradient>
-        </defs>
-        <circle cx={65} cy={65} r={radius} className="track" />
-        <circle cx={65} cy={65} r={radius} className="progress" style={{stroke:"url(#ring)", strokeDasharray:circ, strokeDashoffset: offset}} />
-        <text x="50%" y="50%" dominantBaseline="middle" textAnchor="middle" className="progress-text">{Math.round(percent)}%</text>
-      </svg>
-    )
+  const startOnboarding = () => {
+    setCurrentScreen('onboarding')
+    setOnboardingStep('personal')
   }
 
-  const MealsList = () => (
-    <div className="card glass">
-      <div className="card-header">
-        <h2>Блюда</h2>
-        <div style={{display:'flex', gap:'.4rem'}}>
-          <button className="btn small" onClick={()=> document.getElementById(photoInputId)?.click()} title="Фото">📷</button>
-          <button className="btn small" onClick={()=> setMealModalOpen(true)}>+</button>
-        </div>
-        <input id={photoInputId} type="file" accept="image/*" style={{display:'none'}} onChange={async e=> {
-          const file = e.target.files?.[0]; if(!file) return; pushToast('Загрузка фото','info');
-          try { const res = await api.analyzePhoto(file); if(res?.meal){ setMeals([res.meal, ...meals]); pushToast('Фото добавлено (заглушка)','success'); fetchSummary(); }
-          } catch { pushToast('Ошибка анализа фото','error') }
-          e.target.value='';
-        }} />
-      </div>
-      <ul className="meal-list">
-        {loadingMeals && !meals.length && (
-          <>
-            {Array.from({length:5}).map((_,i)=>(<li key={i} className="meal-item skeleton" style={{height:'62px'}} />))}
-          </>
-        )}
-        {meals.map(m => (
-          <li key={m.id} className="meal-item">
-            <div className="mi-head"><strong>{m.food_name}</strong><span className="mi-cal">{m.calories} ккал</span></div>
-            <div className="mi-macros">B:{m.protein} У:{m.carbs} Ж:{m.fat}</div>
-            <div className="mi-actions">
-              <button className="btn xsmall ghost" onClick={()=>{ const name = prompt('Название', m.food_name) || m.food_name; api.updateMeal(m.id!, { food_name: name }).then((upd:any)=> { updateMealState(upd); pushToast('Блюдо обновлено','success') }).catch(()=> pushToast('Ошибка обновления','error')) }}>✏️</button>
-              <button className="btn xsmall ghost" onClick={()=>{ if(confirm('Удалить?')) api.deleteMeal(m.id!).then(()=> { removeMeal(m.id!); pushToast('Удалено','info') }).catch(()=> pushToast('Ошибка удаления','error')) }}>🗑</button>
-            </div>
-          </li>
-        ))}
-        {!loadingMeals && !meals.length && <li className="empty">Нет блюд</li>}
-      </ul>
-    </div>
-  )
+  const handlePersonalData = (data: {
+    gender: 'male' | 'female' | 'other'
+    age: number
+    height: number
+    weight: number
+  }) => {
+    setUserProfile(prev => ({
+      ...prev,
+      gender: data.gender,
+      age: data.age,
+      height: data.height,
+      weight: data.weight
+    }))
+    setOnboardingStep('goal')
+  }
 
-  const Dashboard = () => (
-    <div className="grid">
-      <section className="card summary-card glass">
-        <h2>День</h2>
-        {loadingSummary && !summary && (
-          <div className="daily-grid">
-            <div className="ring-wrap skeleton sk-ring" />
-            <div className="kpi" style={{gap:'.55rem'}}>
-              {Array.from({length:5}).map((_,i)=>(<div key={i} className="skeleton" style={{height:'22px', borderRadius:'8px'}} />))}
-            </div>
-          </div>
-        )}
-        {summary && !loadingSummary && (
-          <div className="daily-grid">
-            <div className="ring-wrap">{progressCircle(summary.progress_percent)}</div>
-            <div className="kpi">
-              <div className="k-row"><span>Потреблено</span><strong>{summary.calories_consumed.toFixed(0)}</strong></div>
-              <div className="k-row"><span>Цель</span><strong>{summary.calories_target ?? '—'}</strong></div>
-              <div className="k-row"><span>Осталось</span><strong>{summary.calories_remaining !== null ? Math.max(summary.calories_remaining,0).toFixed(0): '—'}</strong></div>
-              <div className="macro-bar">
-                <div className="macro p" style={{width: Math.min(100, summary.protein_total) + '%'}} title={`Белок ${summary.protein_total.toFixed(1)} г`}></div>
-                <div className="macro c" style={{width: Math.min(100, summary.carbs_total) + '%'}} title={`Углеводы ${summary.carbs_total.toFixed(1)} г`}></div>
-                <div className="macro f" style={{width: Math.min(100, summary.fat_total) + '%'}} title={`Жиры ${summary.fat_total.toFixed(1)} г`}></div>
-              </div>
-              <div className="mini-msg">{summary.message}</div>
-            </div>
-          </div>
-        )}
-        {!loadingSummary && !summary && <div className="placeholder">Нет данных</div>}
-      </section>
-      <MealsList />
-      <section className="card glass">
-        <h2>Макро цели</h2>
-        {loadingMacros && <div className="skeleton" style={{height:'60px', borderRadius:'12px'}} />}
-        {!loadingMacros && macroGoals && (
-          <div className="macro-goals">
-            <div className="mg-row"><span>Ккал</span><strong>{macroGoals.calories}</strong></div>
-            <div className="mg-row"><span>Белок</span><strong>{macroGoals.protein_g} г ({macroGoals.protein_pct}%)</strong></div>
-            <div className="mg-row"><span>Жиры</span><strong>{macroGoals.fat_g} г ({macroGoals.fat_pct}%)</strong></div>
-            <div className="mg-row"><span>Углеводы</span><strong>{macroGoals.carbs_g} г ({macroGoals.carbs_pct}%)</strong></div>
-            <div className="mini-msg">Метод: {macroGoals.method}</div>
-          </div>
-        )}
-        {!loadingMacros && !macroGoals && <div className="placeholder">Нет данных</div>}
-      </section>
-      <section className="card glass">
-        <h2>Прогноз веса</h2>
-        <div style={{display:'flex', gap:'.4rem', marginBottom:'.5rem'}}>
-          {[14,30,60,90].map(d=> <button key={d} className={`btn xsmall ghost ${forecastDays===d? 'active':''}`} onClick={()=> setForecastDays(d)}>{d}д</button>)}
-        </div>
-        {loadingForecast && <div className="skeleton" style={{height:'80px', borderRadius:'12px'}} />}
-        {!loadingForecast && forecast && (
-          <div className="forecast-block">
-            <div className="mg-row"><span>Старт</span><strong>{forecast.start_weight.toFixed(1)} кг</strong></div>
-            {forecast.target_weight && <div className="mg-row"><span>Цель</span><strong>{forecast.target_weight} кг</strong></div>}
-            <div className="mg-row"><span>Δ нед</span><strong>{forecast.weekly_change_kg.toFixed(3)} кг</strong></div>
-            <div className="spark-wrap" style={{marginTop:'.4rem'}}>
-              <Sparkline values={forecast.points.map((p:any)=> p.est_weight)} />
-            </div>
-          </div>
-        )}
-        {!loadingForecast && !forecast && <div className="placeholder">Недостаточно данных</div>}
-      </section>
-    </div>
-  )
+  const handleGoalData = (data: {
+    goalType: 'lose' | 'maintain' | 'gain'
+    targetWeight?: number
+  }) => {
+    setUserProfile(prev => ({
+      ...prev,
+      goal: data.goalType,
+      targetWeight: data.targetWeight
+    }))
+    setOnboardingStep('activity')
+  }
 
-  const deficitSeries = useMemo(()=> history.map((h:any)=> h.deficit ?? 0), [history])
-  const avgDeficit = useMemo(()=> deficitSeries.length? Math.round(deficitSeries.reduce((a:number,b:number)=>a+b,0)/deficitSeries.length): 0, [deficitSeries])
-  const trend = useMemo(()=> {
-    if(deficitSeries.length < 2) return 0
-    return deficitSeries[deficitSeries.length-1] - deficitSeries[0]
-  }, [deficitSeries])
-  const HistoryPage = () => (
-    <div className="grid">
-      <div className="card glass">
-        <h2>История дефицита</h2>
-        <div className="history-meta">
-          <div className="filters">
-            {[7,14,30,90].map(d=> <button key={d} className={`btn xsmall ghost ${historyDays===d? 'active':''}`} onClick={()=> setHistoryDays(d)} disabled={historyDays===d}>{d}д</button>)}
-          </div>
-          <div className="stats">
-            <span>Средн: <strong className={avgDeficit<0?'bad':'good'}>{avgDeficit}</strong></span>
-            <span>Тренд: <strong className={trend<0?'bad':'good'}>{trend>0? '+'+trend: trend}</strong></span>
-          </div>
-        </div>
-        <div className="spark-wrap"><Sparkline values={deficitSeries} /></div>
-        <div className="history-list">
-          {loadingHistory && !history.length && Array.from({length:6}).map((_,i)=> <div key={i} className="history-row skeleton" style={{height:'34px'}} />)}
-          {history.slice().reverse().map((d:any,i:number)=>(
-            <div key={i} className="history-row">
-              <span>{d.date}</span>
-              <span className={d.deficit < 0 ? 'bad' : 'good'}>{d.deficit}</span>
-              <span>{d.calories_consumed} / {d.calories_target ?? '—'}</span>
-            </div>
-          ))}
-          {!loadingHistory && !history.length && <div className="placeholder">Нет данных</div>}
-        </div>
-      </div>
-    </div>
-  )
+  const handleActivityData = (profile: UserProfile) => {
+    setUserProfile(profile)
+    setOnboardingStep('health')
+  }
 
-  const ProfilePage = () => {
-    const [editing, setEditing] = useState(false)
-    const [form, setForm] = useState(()=> userProfile ? {
-      telegram_id: userProfile.telegram_id,
-      username: userProfile.username || '',
-      age: userProfile.age || '',
-      gender: userProfile.gender || 'male',
-      height: userProfile.height || '',
-      weight: userProfile.weight || '',
-      target_weight: userProfile.target_weight || '',
-      activity_level: userProfile.activity_level || 'moderate',
-      goal: userProfile.goal || 'maintain'
-    } : null)
-    const setUser = useDataStore(s=>s.setUser)
-    const onChange = (k:string,v:any)=> setForm(f=> ({...f!, [k]: v}))
-    const save = async () => {
-      if(!form) return
-      try {
-        const payload = { ...form,
-          age: form.age? Number(form.age): null,
-          height: form.height? Number(form.height): null,
-          weight: form.weight? Number(form.weight): null,
-          target_weight: form.target_weight? Number(form.target_weight): null,
-        }
-        const data = await api.createOrUpdateUser(payload)
-        setUser(data)
-        pushToast('Профиль сохранён','success')
-        setEditing(false)
-      } catch { pushToast('Ошибка сохранения','error') }
+  const handleHealthData = (profile: UserProfile) => {
+    setUserProfile(profile)
+    setOnboardingStep('complete')
+  }
+
+  const handleOnboardingComplete = () => {
+    setCurrentScreen('dashboard')
+  }
+
+  const goBackToPersonal = () => {
+    setOnboardingStep('personal')
+  }
+
+  const goBackToGoal = () => {
+    setOnboardingStep('goal')
+  }
+
+  const goBackToActivity = () => {
+    setOnboardingStep('activity')
+  }
+
+  // Рендеринг онбординга
+  if (currentScreen === 'onboarding') {
+    switch (onboardingStep) {
+      case 'personal':
+        return (
+          <PersonalDataStep 
+            data={{
+              gender: userProfile.gender || '',
+              age: userProfile.age || 25,
+              height: userProfile.height || 170,
+              weight: userProfile.weight || 70
+            }}
+            onUpdate={(data) => setUserProfile(prev => ({ ...prev, ...data }))}
+            onNext={() => setOnboardingStep('goal')}
+          />
+        )
+      case 'goal':
+        return (
+          <GoalStep 
+            onNext={handleGoalData}
+            onBack={goBackToPersonal}
+            currentWeight={userProfile.weight || 70}
+          />
+        )
+      case 'activity':
+        return (
+          <ActivityStep
+            profile={userProfile}
+            onUpdate={handleActivityData}
+            onNext={() => setOnboardingStep('health')}
+            onBack={goBackToGoal}
+          />
+        )
+      case 'health':
+        return (
+          <HealthStep
+            profile={userProfile}
+            onUpdate={handleHealthData}
+            onComplete={handleOnboardingComplete}
+            onBack={goBackToActivity}
+          />
+        )
+      case 'complete':
+        return (
+          <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black text-white flex items-center justify-center">
+            <div className="text-center">
+              <h2 className="text-2xl font-bold mb-4">Профиль создан!</h2>
+              <button
+                onClick={handleOnboardingComplete}
+                className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl"
+              >
+                Перейти к приложению
+              </button>
+            </div>
+          </div>
+        )
+      default:
+        return <div>Шаг в разработке...</div>
     }
+  }
+
+  // Главный экран приложения
+  if (currentScreen === 'dashboard') {
     return (
-      <div className="grid">
-        <div className="card glass">
-          <h2>Профиль</h2>
-          {!userProfile && <div className="placeholder">Нет профиля</div>}
-          {userProfile && !editing && (
-            <div className="profile-block">
-              <div>ID: {userProfile.telegram_id}</div>
-              <div>Ник: {userProfile.username || '—'}</div>
-              <div>Ккал/день: {userProfile.daily_calories || '—'}</div>
-              <div className="row-btns">
-                <button className="btn" onClick={()=> setEditing(true)}>Редактировать</button>
-              </div>
-            </div>
-          )}
-          {userProfile && editing && form && (
-            <div className="edit-form">
-              <div className="ef-grid">
-                <label>Ник<input value={form.username} onChange={e=>onChange('username', e.target.value)} /></label>
-                <label>Возраст<input value={form.age} onChange={e=>onChange('age', e.target.value)} type="number" /></label>
-                <label>Рост<input value={form.height} onChange={e=>onChange('height', e.target.value)} type="number" /></label>
-                <label>Вес<input value={form.weight} onChange={e=>onChange('weight', e.target.value)} type="number" /></label>
-                <label>Целевой<input value={form.target_weight} onChange={e=>onChange('target_weight', e.target.value)} type="number" /></label>
-                <label>Пол<select value={form.gender} onChange={e=>onChange('gender', e.target.value)}><option value="male">Муж</option><option value="female">Жен</option></select></label>
-                <label>Активность<select value={form.activity_level} onChange={e=>onChange('activity_level', e.target.value)}><option value="sedentary">Мин</option><option value="light">Лёгкая</option><option value="moderate">Средняя</option><option value="active">Высокая</option><option value="very_active">Очень высокая</option></select></label>
-                <label>Цель<select value={form.goal} onChange={e=>onChange('goal', e.target.value)}><option value="lose_weight">Снижение</option><option value="maintain">Поддержание</option><option value="gain_weight">Набор</option></select></label>
-              </div>
-              <div className="ef-actions">
-                <button className="btn ghost" onClick={()=> setEditing(false)}>Отмена</button>
-                <button className="btn" onClick={save}>Сохранить</button>
-              </div>
-            </div>
-          )}
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black text-white p-6">
+        <h1 className="text-2xl font-bold mb-4">Добро пожаловать в NutriAI!</h1>
+        <div className="bg-gray-800/50 rounded-xl p-6">
+          <h2 className="text-lg font-semibold mb-2">Ваш профиль:</h2>
+          <pre className="text-sm text-gray-300">{JSON.stringify(userProfile, null, 2)}</pre>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="app">
-      <div className="topbar">
-        <div className="logo" onClick={()=> navigate('/')}>🍎 NutriAI</div>
-        <nav>
-          <NavLink to="/" end>Дашборд</NavLink>
-          <NavLink to="/history">История</NavLink>
-          <NavLink to="/profile">Профиль</NavLink>
-        </nav>
-        <div className="actions">
-          <span className="status-chip">API: {apiMessage || '…'} | {health || '…'}</span>
-            <button className="btn ghost" onClick={toggleTheme}>{theme==='light'? '🌙' : '🌞'}</button>
-            <button className="btn ghost" onClick={()=> { logout(); navigate('/') }}>Выйти</button>
-            <button className="btn" onClick={()=> setMealModalOpen(true)}>+</button>
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 text-white relative overflow-hidden">
+      {/* Animated background elements */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-600/10 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-blue-600/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-green-600/5 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }}></div>
+        
+        {/* Floating particles */}
+        <div className="absolute inset-0">
+          {/* Группа 1 - маленькие быстрые частицы */}
+          <div className="absolute top-1/4 left-1/4 w-2 h-2 bg-cyan-400/40 rounded-full animate-ping" style={{ animationDelay: '0s', animationDuration: '3s' }}></div>
+          <div className="absolute top-3/4 right-1/4 w-1 h-1 bg-purple-400/50 rounded-full animate-ping" style={{ animationDelay: '1s', animationDuration: '4s' }}></div>
+          <div className="absolute top-1/2 left-3/4 w-1.5 h-1.5 bg-emerald-400/45 rounded-full animate-ping" style={{ animationDelay: '2s', animationDuration: '3.5s' }}></div>
+          <div className="absolute top-1/6 right-1/3 w-1 h-1 bg-pink-400/40 rounded-full animate-ping" style={{ animationDelay: '0.5s', animationDuration: '2.8s' }}></div>
+          <div className="absolute bottom-1/4 left-1/6 w-2 h-2 bg-blue-400/35 rounded-full animate-ping" style={{ animationDelay: '1.5s', animationDuration: '4.2s' }}></div>
+          
+          {/* Группа 2 - медленные мерцающие частицы */}
+          <div className="absolute top-1/3 right-1/5 w-1 h-1 bg-yellow-400/60 rounded-full animate-pulse" style={{ animationDelay: '0s', animationDuration: '2s' }}></div>
+          <div className="absolute bottom-1/3 right-2/3 w-1.5 h-1.5 bg-teal-400/50 rounded-full animate-pulse" style={{ animationDelay: '1s', animationDuration: '2.5s' }}></div>
+          <div className="absolute top-2/3 left-1/5 w-1 h-1 bg-indigo-400/45 rounded-full animate-pulse" style={{ animationDelay: '2s', animationDuration: '3s' }}></div>
+          <div className="absolute top-1/5 left-2/3 w-2 h-2 bg-green-400/40 rounded-full animate-pulse" style={{ animationDelay: '0.8s', animationDuration: '2.8s' }}></div>
+          
+          {/* Группа 3 - плавающие частицы */}
+          <div className="absolute top-1/2 right-1/6 w-1 h-1 bg-rose-400/50 rounded-full animate-bounce" style={{ animationDelay: '0s', animationDuration: '6s' }}></div>
+          <div className="absolute bottom-1/5 left-1/3 w-1.5 h-1.5 bg-violet-400/45 rounded-full animate-bounce" style={{ animationDelay: '2s', animationDuration: '5s' }}></div>
+          <div className="absolute top-4/5 right-1/2 w-1 h-1 bg-orange-400/40 rounded-full animate-bounce" style={{ animationDelay: '1s', animationDuration: '7s' }}></div>
+          
+          {/* Группа 4 - дополнительные мерцающие точки */}
+          <div className="absolute top-1/8 left-1/2 w-0.5 h-0.5 bg-cyan-300/60 rounded-full animate-ping" style={{ animationDelay: '3s', animationDuration: '2s' }}></div>
+          <div className="absolute bottom-1/8 right-1/4 w-0.5 h-0.5 bg-emerald-300/55 rounded-full animate-ping" style={{ animationDelay: '1.8s', animationDuration: '3.2s' }}></div>
+          <div className="absolute top-3/5 left-1/8 w-1 h-1 bg-purple-300/45 rounded-full animate-ping" style={{ animationDelay: '2.5s', animationDuration: '2.7s' }}></div>
+          <div className="absolute bottom-2/5 right-1/8 w-0.5 h-0.5 bg-pink-300/50 rounded-full animate-ping" style={{ animationDelay: '0.3s', animationDuration: '4s' }}></div>
+          <div className="absolute top-7/8 left-3/4 w-1 h-1 bg-blue-300/40 rounded-full animate-ping" style={{ animationDelay: '2.8s', animationDuration: '3.5s' }}></div>
+          
+          {/* Группа 5 - очень тонкие мерцающие звездочки */}
+          <div className="absolute top-2/5 right-3/4 w-0.5 h-0.5 bg-white/70 rounded-full animate-pulse" style={{ animationDelay: '4s', animationDuration: '1.5s' }}></div>
+          <div className="absolute bottom-3/5 left-2/5 w-0.5 h-0.5 bg-white/60 rounded-full animate-pulse" style={{ animationDelay: '1.2s', animationDuration: '2.2s' }}></div>
+          <div className="absolute top-1/7 right-2/5 w-0.5 h-0.5 bg-white/65 rounded-full animate-pulse" style={{ animationDelay: '3.5s', animationDuration: '1.8s' }}></div>
+          
+          {/* Группа 6 - плавающие частицы с кастомной анимацией */}
+          <div className="absolute top-1/3 left-1/7 w-1 h-1 bg-cyan-400/50 rounded-full animate-float" style={{ animationDelay: '0s' }}></div>
+          <div className="absolute bottom-1/4 right-1/7 w-1.5 h-1.5 bg-purple-400/40 rounded-full animate-drift" style={{ animationDelay: '2s' }}></div>
+          <div className="absolute top-2/3 right-1/3 w-1 h-1 bg-emerald-400/45 rounded-full animate-twinkle" style={{ animationDelay: '1s' }}></div>
         </div>
       </div>
-      <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/history" element={<HistoryPage />} />
-        <Route path="/profile" element={<ProfilePage />} />
-      </Routes>
-      <footer><span className="hint">vMVP • Local • SQLite</span></footer>
-      <OnboardingModal />
-      <MealFormModal open={mealModalOpen} onClose={()=> setMealModalOpen(false)} />
-      <Toasts />
+
+      <div className={`relative z-10 min-h-screen flex flex-col items-center justify-center p-4 pt-6 transition-all duration-1000 ${isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`} style={{ paddingTop: 'max(1.5rem, env(safe-area-inset-top) + 0.5rem)' }}>
+        {/* Logo section - компактнее для мобильных */}
+        <div className="text-center mb-8">
+          <div className="mb-6 relative">
+            {/* Main logo - уменьшен размер */}
+            <div className="relative w-24 h-24 mx-auto mb-4">
+              <div className="absolute inset-0 bg-gradient-to-br from-emerald-400 via-teal-500 to-cyan-600 rounded-2xl transform rotate-6 animate-pulse"></div>
+              <div className="absolute inset-0 bg-gradient-to-br from-purple-500 via-pink-500 to-rose-500 rounded-2xl flex items-center justify-center shadow-2xl">
+                <svg className="w-12 h-12 text-white" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10c1.54 0 3-.35 4.29-.99.36-.18.49-.63.31-.99-.18-.36-.63-.49-.99-.31C14.74 20.35 13.42 20 12 20c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8c0 1.42-.35 2.74-.99 3.71-.18.36-.05.81.31.99.36.18.81.05.99-.31C21.65 15 22 13.54 22 12c0-5.52-4.48-10-10-10zm0 6c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm0 6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/>
+                </svg>
+              </div>
+              {/* Floating particles - уменьшены */}
+              <div className="absolute -top-1 -right-1 w-3 h-3 bg-yellow-400 rounded-full animate-bounce"></div>
+              <div className="absolute -bottom-1 -left-1 w-2 h-2 bg-green-400 rounded-full animate-bounce" style={{ animationDelay: '0.5s' }}></div>
+            </div>
+          </div>
+          
+          <h1 className="text-4xl font-black mb-3 tracking-tight">
+            <span className="bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 bg-clip-text text-transparent">
+              Nutri
+            </span>
+            <span className="bg-gradient-to-r from-purple-400 via-pink-400 to-rose-400 bg-clip-text text-transparent">
+              AI
+            </span>
+          </h1>
+          
+          <p className="text-lg text-gray-300 font-light mb-2 max-w-xs mx-auto leading-relaxed">
+            Революционный подход к учету питания
+          </p>
+          <p className="text-xs text-gray-400 uppercase tracking-wider font-medium">
+            Powered by Artificial Intelligence
+          </p>
+        </div>
+
+        {/* Features grid - компактнее */}
+        <div className="grid grid-cols-1 gap-4 mb-8 max-w-sm w-full">
+          <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4 active:bg-white/10 transition-all duration-200 active:scale-95">
+            <div className="flex items-start space-x-3">
+              <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-white font-bold text-base mb-1">Фото → Анализ</h3>
+                <p className="text-gray-400 text-sm leading-tight">Мгновенное распознавание блюд и точный расчет КБЖУ</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4 active:bg-white/10 transition-all duration-200 active:scale-95">
+            <div className="flex items-start space-x-3">
+              <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-white font-bold text-base mb-1">Умные цели</h3>
+                <p className="text-gray-400 text-sm leading-tight">Персонализированные рекомендации на основе ваших данных</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4 active:bg-white/10 transition-all duration-200 active:scale-95">
+            <div className="flex items-start space-x-3">
+              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-white font-bold text-base mb-1">Прогнозы</h3>
+                <p className="text-gray-400 text-sm leading-tight">ИИ-прогнозирование веса и достижения целей</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* CTA section - компактнее */}
+        <div className="w-full max-w-sm space-y-3">
+          <button
+            onClick={startOnboarding}
+            className="w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 active:from-emerald-600 active:via-teal-600 active:to-cyan-600 text-white font-bold py-4 px-6 rounded-xl transform transition-all duration-200 active:scale-95 shadow-xl"
+          >
+            <span className="text-base">Начать сейчас</span>
+          </button>
+          
+          <div className="text-center space-y-1">
+            <p className="text-gray-400 text-sm">
+              <span className="inline-flex items-center">
+                <svg className="w-4 h-4 text-green-400 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                </svg>
+                Бесплатно 3 анализа в день
+              </span>
+            </p>
+            <p className="text-gray-500 text-xs">
+              Никаких обязательств • Отмена в любое время
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
