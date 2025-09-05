@@ -5,13 +5,13 @@ from typing import List, Optional
 from .database import SessionLocal, engine
 from .models import Base, User, Meal, DailyLog
 from .schemas import (
-    UserCreate, UserOut, DailySummary, HistoryResponse, HistoryDay,
+    UserCreate, UserOut, UserProfileUpdate, DailySummary, HistoryResponse, HistoryDay,
     WeightForecastResponse, WeightForecastPoint, MacroGoals,
     PhotoMealResponse, PhotoAnalysisResult
 )
 from .meal_schemas import MealCreate, MealOut, MealUpdate
 from .config import get_settings
-import hmac, hashlib, urllib.parse, time
+import hmac, hashlib, urllib.parse, time, json
 import jwt  # type: ignore
 from jwt import PyJWTError
 
@@ -182,6 +182,122 @@ async def create_or_update_user(payload: UserCreate, db: Session = Depends(get_d
         user.daily_calories = round(daily, 0)
     db.commit(); db.refresh(user)
     return user
+
+# New endpoints for user profile management
+@app.get("/profile", response_model=UserOut)
+async def get_profile(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Get current user profile with all onboarding data"""
+    return UserOut.from_orm_with_json(current)
+
+@app.patch("/profile", response_model=UserOut)
+async def update_profile(payload: UserProfileUpdate, current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Update user profile with onboarding data"""
+    user = current
+    
+    # Update basic fields
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        if value is not None:
+            if field in ['health_conditions', 'dietary_restrictions', 'allergens']:
+                # Convert lists to JSON strings
+                setattr(user, field, json.dumps(value) if value else None)
+            else:
+                setattr(user, field, value)
+    
+    # Recalculate BMR/TDEE if necessary data is present
+    if user.age and user.gender and user.height and user.weight:
+        # Mifflin-St Jeor equation
+        if user.gender == 'male':
+            bmr = 10 * user.weight + 6.25 * user.height - 5 * user.age + 5
+        elif user.gender == 'female':
+            bmr = 10 * user.weight + 6.25 * user.height - 5 * user.age - 161
+        else:  # other
+            # Use average of male/female formulas
+            bmr_male = 10 * user.weight + 6.25 * user.height - 5 * user.age + 5
+            bmr_female = 10 * user.weight + 6.25 * user.height - 5 * user.age - 161
+            bmr = (bmr_male + bmr_female) / 2
+        
+        # Calculate TDEE using activity multiplier or default values
+        if user.activity_multiplier:
+            factor = user.activity_multiplier
+        else:
+            activity_map = {
+                'sedentary': 1.2,
+                'light': 1.375,
+                'moderate': 1.55,
+                'active': 1.725,
+                'very_active': 1.9
+            }
+            factor = activity_map.get(user.activity_level or 'sedentary', 1.2)
+        
+        tdee = bmr * factor
+        
+        # Goal adjustment for daily calories
+        goal_adjust = {
+            'lose': -0.20,  # 20% deficit
+            'maintain': 0.0,
+            'gain': 0.15   # 15% surplus
+        }
+        adj = goal_adjust.get(user.goal or 'maintain', 0.0)
+        daily = tdee * (1 + adj)
+        
+        user.bmr = round(bmr, 1)
+        user.tdee = round(tdee, 1)
+        user.daily_calories = round(daily, 0)
+    
+    db.commit()
+    db.refresh(user)
+    return UserOut.from_orm_with_json(user)
+
+# Endpoint for creating demo/mock user (for testing)
+@app.post("/create-demo-user", response_model=UserOut)
+async def create_demo_user(db: Session = Depends(get_db)):
+    """Create a demo user for testing purposes"""
+    import uuid
+    
+    # Generate mock data
+    mock_telegram_id = f"demo_{uuid.uuid4().hex[:8]}"
+    mock_username = f"demo_user_{uuid.uuid4().hex[:6]}"
+    
+    # Check if user already exists
+    user = db.query(User).filter(User.telegram_id == mock_telegram_id).first()
+    if user:
+        return UserOut.from_orm_with_json(user)
+    
+    # Create new demo user with some sample data
+    user = User(
+        telegram_id=mock_telegram_id,
+        username=mock_username,
+        first_name="Demo",
+        last_name="User",
+        age=25,
+        gender="male",
+        height=175.0,
+        weight=70.0,
+        target_weight=65.0,
+        activity_level="moderate",
+        activity_multiplier=1.55,
+        goal="lose",
+        sleep_hours=8.0,
+        water_intake=2.5,
+        health_conditions=json.dumps(["Нет особых состояний"]),
+        dietary_restrictions=json.dumps(["Нет ограничений"]),
+        allergens=json.dumps([])
+    )
+    
+    # Calculate BMR/TDEE
+    bmr = 10 * user.weight + 6.25 * user.height - 5 * user.age + 5  # Male formula
+    tdee = bmr * user.activity_multiplier
+    daily = tdee * 0.8  # 20% deficit for weight loss
+    
+    user.bmr = round(bmr, 1)
+    user.tdee = round(tdee, 1)
+    user.daily_calories = round(daily, 0)
+    
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    
+    return UserOut.from_orm_with_json(user)
 
 def _recalc_today_log(db: Session, user: User):
     from datetime import datetime

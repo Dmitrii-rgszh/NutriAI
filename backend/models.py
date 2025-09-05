@@ -14,12 +14,20 @@ class User(Base):
 
     # Profile data
     age = Column(Integer, nullable=True)
-    gender = Column(String, nullable=True)  # male, female
+    gender = Column(String, nullable=True)  # male, female, other
     height = Column(Float, nullable=True)  # cm
     weight = Column(Float, nullable=True)  # kg
     target_weight = Column(Float, nullable=True)  # kg
     activity_level = Column(String, nullable=True)  # sedentary, light, moderate, active, very_active
-    goal = Column(String, nullable=True)  # lose_weight, maintain, gain_weight
+    activity_multiplier = Column(Float, nullable=True)
+    goal = Column(String, nullable=True)  # lose, maintain, gain
+    sleep_hours = Column(Float, nullable=True)  # hours per night
+    water_intake = Column(Float, nullable=True)  # liters per day
+
+    # Health data
+    health_conditions = Column(Text, nullable=True)  # JSON array as string
+    dietary_restrictions = Column(Text, nullable=True)  # JSON array as string
+    allergens = Column(Text, nullable=True)  # JSON array as string
 
     # Calculated fields
     bmr = Column(Float, nullable=True)

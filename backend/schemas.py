@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Any
+import json
 
 class UserCreate(BaseModel):
     telegram_id: str = Field(..., min_length=1)
@@ -7,30 +8,108 @@ class UserCreate(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     age: Optional[int] = Field(None, ge=5, le=120)
-    gender: Optional[str] = Field(None, pattern="^(male|female)$")
+    gender: Optional[str] = Field(None, pattern="^(male|female|other)$")
     height: Optional[float] = Field(None, ge=50, le=250)
     weight: Optional[float] = Field(None, ge=15, le=400)
     target_weight: Optional[float] = Field(None, ge=15, le=400)
-    activity_level: Optional[str] = Field(None, pattern="^(sedentary|light|moderate|active|very_active)$")
-    goal: Optional[str] = Field(None, pattern="^(lose_weight|maintain|gain_weight)$")
+    activity_level: Optional[str] = None
+    activity_multiplier: Optional[float] = Field(None, ge=1.0, le=3.0)
+    goal: Optional[str] = Field(None, pattern="^(lose|maintain|gain)$")
+    sleep_hours: Optional[float] = Field(None, ge=1, le=24)
+    water_intake: Optional[float] = Field(None, ge=0, le=10)
+    health_conditions: Optional[List[str]] = None
+    dietary_restrictions: Optional[List[str]] = None
+    allergens: Optional[List[str]] = None
+
+class UserProfileUpdate(BaseModel):
+    # Personal data
+    age: Optional[int] = Field(None, ge=5, le=120)
+    gender: Optional[str] = Field(None, pattern="^(male|female|other)$")
+    height: Optional[float] = Field(None, ge=50, le=250)
+    weight: Optional[float] = Field(None, ge=15, le=400)
+    
+    # Goals
+    goal: Optional[str] = Field(None, pattern="^(lose|maintain|gain)$")
+    target_weight: Optional[float] = Field(None, ge=15, le=400)
+    
+    # Activity
+    activity_level: Optional[str] = None
+    activity_multiplier: Optional[float] = Field(None, ge=1.0, le=3.0)
+    sleep_hours: Optional[float] = Field(None, ge=1, le=24)
+    
+    # Health
+    health_conditions: Optional[List[str]] = None
+    dietary_restrictions: Optional[List[str]] = None
+    allergens: Optional[List[str]] = None
+    water_intake: Optional[float] = Field(None, ge=0, le=10)
 
 class UserOut(BaseModel):
     id: int
     telegram_id: str
     username: Optional[str]
+    first_name: Optional[str]
+    last_name: Optional[str]
     age: Optional[int]
     gender: Optional[str]
     height: Optional[float]
     weight: Optional[float]
     target_weight: Optional[float]
     activity_level: Optional[str]
+    activity_multiplier: Optional[float]
     goal: Optional[str]
+    sleep_hours: Optional[float]
+    water_intake: Optional[float]
+    health_conditions: Optional[List[str]] = None
+    dietary_restrictions: Optional[List[str]] = None
+    allergens: Optional[List[str]] = None
     bmr: Optional[float]
     tdee: Optional[float]
     daily_calories: Optional[float]
 
     class Config:
         from_attributes = True
+    
+    @classmethod
+    def from_orm_with_json(cls, obj):
+        # Convert JSON strings to lists
+        data = {
+            "id": obj.id,
+            "telegram_id": obj.telegram_id,
+            "username": obj.username,
+            "first_name": obj.first_name,
+            "last_name": obj.last_name,
+            "age": obj.age,
+            "gender": obj.gender,
+            "height": obj.height,
+            "weight": obj.weight,
+            "target_weight": obj.target_weight,
+            "activity_level": obj.activity_level,
+            "activity_multiplier": obj.activity_multiplier,
+            "goal": obj.goal,
+            "sleep_hours": obj.sleep_hours,
+            "water_intake": obj.water_intake,
+            "bmr": obj.bmr,
+            "tdee": obj.tdee,
+            "daily_calories": obj.daily_calories,
+        }
+        
+        # Parse JSON fields
+        try:
+            data["health_conditions"] = json.loads(obj.health_conditions) if obj.health_conditions else []
+        except:
+            data["health_conditions"] = []
+            
+        try:
+            data["dietary_restrictions"] = json.loads(obj.dietary_restrictions) if obj.dietary_restrictions else []
+        except:
+            data["dietary_restrictions"] = []
+            
+        try:
+            data["allergens"] = json.loads(obj.allergens) if obj.allergens else []
+        except:
+            data["allergens"] = []
+            
+        return cls(**data)
 
 class MealOut(BaseModel):
     id: int
