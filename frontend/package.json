@@ -4,9 +4,13 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+  "dev": "vite --port 3000 --strictPort",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:no-hover": "node scripts/no-hover-check.mjs",
+  "check:no-temp": "node scripts/no-temp-artifacts.mjs",
+  "check:origin": "node scripts/check-origin.mjs",
+    "prepare": "husky install"
   },
   "dependencies": {
     "react": "^18.2.0",
@@ -20,6 +24,7 @@
     "vite": "^5.0.8",
     "tailwindcss": "^3.3.0",
     "autoprefixer": "^10.4.16",
-    "postcss": "^8.4.32"
+  "postcss": "^8.4.32",
+  "husky": "^9.0.0"
   }
 }
