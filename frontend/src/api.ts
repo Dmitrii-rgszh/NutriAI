@@ -57,6 +57,11 @@ export const api = {
   history: (days: number) => apiFetch(`/history/${days}`),
   forecastWeight: (days: number = 30) => apiFetch(`/forecast/weight?days=${days}`),
   macroGoals: () => apiFetch('/goals/macros'),
+  profileOverview: () => apiFetch('/profile/overview'),
+  addWeight: (weight_kg: number, date?: string) => apiFetch('/profile/weight', { method:'POST', body: JSON.stringify({ weight_kg, date }) }),
+  weightHistory: (days: number = 30) => apiFetch(`/profile/weight/history?days=${days}`),
+  addWater: (amount_l: number, date?: string) => apiFetch('/profile/water', { method:'POST', body: JSON.stringify({ amount_l, date }) }),
+  setSleep: (hours: number, date?: string) => apiFetch('/profile/sleep', { method:'POST', body: JSON.stringify({ hours, date }) }),
   analyzePhoto: async (file: File) => {
     const { accessToken } = useDataStore.getState()
     if (!accessToken) throw new Error('No auth')

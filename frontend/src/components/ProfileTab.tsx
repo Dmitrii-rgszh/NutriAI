@@ -1,4 +1,5 @@
 import React from 'react'
+import ProfileOverview from './ProfileOverview'
 
 interface ProfileTabProps {
   userProfile: any
@@ -19,6 +20,7 @@ const ProfileTab: React.FC<ProfileTabProps> = ({ userProfile, onStartOnboarding,
   }
   return (
     <div className="p-4 space-y-4">
+      <ProfileOverview />
       <div className="text-center mb-6">
         <h2 className="text-xl font-bold text-white mb-2">👤 Профиль</h2>
         <p className="text-gray-300 text-sm">Управление вашими данными и настройками</p>
