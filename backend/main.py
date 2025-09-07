@@ -417,6 +417,7 @@ class OverviewResponse(_BM):
     streak: dict
     achievements: List[dict]
     recent_meals: List[dict]
+    macros: Optional[dict] = None
 
 @app.post('/profile/weight', response_model=WeightEntryOut)
 async def add_weight(entry: WeightEntryIn, current: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -470,6 +471,12 @@ async def profile_overview(current: User = Depends(get_current_user), db: Sessio
         _recalc_today_log(db, current)
         log = db.query(DailyLog).filter(DailyLog.user_id==current.id, DailyLog.date==today).first()
     meals = db.query(Meal).filter(Meal.user_id==current.id).order_by(Meal.created_at.desc()).limit(5).all()
+    # Meals for today (for macro sums)
+    from sqlalchemy import func as _f
+    today_meals = db.query(Meal).filter(
+        Meal.user_id==current.id,
+        _f.strftime('%Y-%m-%d', Meal.created_at)==today
+    ).all()
     recent_meals = [ { 'id': m.id, 'food_name': m.food_name, 'calories': m.calories } for m in meals ]
     wq = db.query(WeightEntry).filter(WeightEntry.user_id==current.id).order_by(WeightEntry.date.desc()).limit(2).all()
     weight_block = None
@@ -502,18 +509,51 @@ async def profile_overview(current: User = Depends(get_current_user), db: Sessio
     if cal_target:
         if percent < 90: zone = 'under'
         elif percent > 105: zone = 'over'
+    # Macro goals (reuse logic inline to avoid second endpoint call)
+    macro_block = None
+    if (current.daily_calories or current.tdee) and today_meals:
+        calories_goal = current.daily_calories or current.tdee
+        weight_ref = current.weight or 70
+        protein_goal = weight_ref * 1.7
+        protein_kcal = protein_goal * 4
+        fat_kcal_goal = calories_goal * 0.28
+        fat_goal = fat_kcal_goal / 9
+        remaining_kcal = calories_goal - protein_kcal - fat_kcal_goal
+        if remaining_kcal < 0:
+            remaining_kcal = max(calories_goal * 0.25, 0)
+        carbs_goal = remaining_kcal / 4
+        # Consumed
+        p_val = sum(m.protein for m in today_meals)
+        c_val = sum(m.carbs for m in today_meals)
+        f_val = sum(m.fat for m in today_meals)
+        macro_block = {
+            'protein': { 'value': round(p_val,1), 'target': round(protein_goal,1), 'percent': (round(p_val / protein_goal *100,1) if protein_goal else None) },
+            'carbs': { 'value': round(c_val,1), 'target': round(carbs_goal,1), 'percent': (round(c_val / carbs_goal *100,1) if carbs_goal else None) },
+            'fat': { 'value': round(f_val,1), 'target': round(fat_goal,1), 'percent': (round(f_val / fat_goal *100,1) if fat_goal else None) }
+        }
     today_block = {
         'date': today,
         'calories': { 'value': calories, 'target': cal_target, 'percent': percent, 'zone': zone },
         'water_l': { 'value': (log.water_l if log else 0), 'target': current.water_intake, 'percent': ((log.water_l / current.water_intake *100) if log and log.water_l and current.water_intake else None) },
         'sleep_h': { 'value': (log.sleep_h if log else None), 'target': 8 }
     }
-    ach = []
+    # Achievements (ephemeral calculation)
+    ach: List[dict] = []
+    total_meals = db.query(Meal).filter(Meal.user_id==current.id).count()
+    if total_meals >= 1: ach.append({'id':'first_meal','title':'Первое блюдо'})
+    if total_meals >= 5: ach.append({'id':'five_meals','title':'5 блюд'})
+    if streak_days >= 3: ach.append({'id':'streak_3','title':'Стрик 3 дня'})
+    if streak_days >= 7: ach.append({'id':'streak_7','title':'Стрик 7 дней'})
+    if log and current.water_intake and log.water_l and log.water_l >= current.water_intake: ach.append({'id':'water_goal','title':'Цель по воде'})
+    if log and log.sleep_h and log.sleep_h >= 8: ach.append({'id':'sleep_8h','title':'Сон 8 часов'})
+    w_today = db.query(WeightEntry).filter(WeightEntry.user_id==current.id, WeightEntry.date==today).first()
+    if w_today: ach.append({'id':'weight_logged','title':'Вес обновлён'})
     return OverviewResponse(
         user={'id': current.id, 'telegram_id': current.telegram_id, 'goal': current.goal, 'gender': current.gender},
         today=today_block,
         weight=weight_block,
         streak=streak,
         achievements=ach,
-        recent_meals=recent_meals
+        recent_meals=recent_meals,
+        macros=macro_block
     )
