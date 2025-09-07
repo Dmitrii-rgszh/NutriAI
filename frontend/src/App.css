@@ -188,6 +188,7 @@ footer { text-align:center; margin-top:1rem; font-size:.7rem; letter-spacing:.6p
 .spark-range { font-size:.6rem; color:#94a3b8; }
 .spark-loading { height:18px; margin-top:.3rem; }
 .spark-empty { font-size:.6rem; color:#64748b; margin-top:.25rem; }
+.suggest-tip { color:#60a5fa; }
 
 /* Mini macros block */
 .macro-mini { margin-top:.6rem; display:flex; flex-direction:column; gap:.35rem; }

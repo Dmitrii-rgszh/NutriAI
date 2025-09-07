@@ -63,6 +63,14 @@ export default function ProfileOverview() {
 
   const cal = data.today.calories
   const weightBlock = data.weight
+  const mealsCount = data.today.meals_count || 0
+  let suggestion: string | null = null
+  if (data.macros) {
+    const proteinGap = data.macros.protein.target - data.macros.protein.value
+    if (proteinGap > 15) suggestion = 'Добавьте белок (творог / курица / йогурт)'
+    else if (data.macros.fat.percent && data.macros.fat.percent < 40 && mealsCount>=2) suggestion = 'Немного полезных жиров (орехи / оливковое масло)'
+    else if (data.today.calories.percent < 60) suggestion = 'Основной приём пищи впереди — спланируйте тарелку'
+  }
 
   // Подготовка данных спарклайна
   let sparkPath = ''
@@ -89,6 +97,7 @@ export default function ProfileOverview() {
         <div className="k-row"><span>Вода</span><strong>{data.today.water_l.value || 0} / {data.today.water_l.target || '—'} л</strong></div>
         <div className="k-row"><span>Сон</span><strong>{data.today.sleep_h.value || '—'} ч</strong></div>
       </div>
+  {suggestion && <div className="mini-msg suggest-tip mt-04">{suggestion}</div>}
       {data.macros && (
         <div className="macro-mini">
           {(['protein','carbs','fat'] as const).map(key=>{

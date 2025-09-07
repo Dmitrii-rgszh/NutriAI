@@ -535,7 +535,8 @@ async def profile_overview(current: User = Depends(get_current_user), db: Sessio
         'date': today,
         'calories': { 'value': calories, 'target': cal_target, 'percent': percent, 'zone': zone },
         'water_l': { 'value': (log.water_l if log else 0), 'target': current.water_intake, 'percent': ((log.water_l / current.water_intake *100) if log and log.water_l and current.water_intake else None) },
-        'sleep_h': { 'value': (log.sleep_h if log else None), 'target': 8 }
+    'sleep_h': { 'value': (log.sleep_h if log else None), 'target': 8 },
+    'meals_count': len(today_meals)
     }
     # Achievements (ephemeral calculation)
     ach: List[dict] = []
