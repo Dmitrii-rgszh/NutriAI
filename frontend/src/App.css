@@ -189,6 +189,44 @@ footer { text-align:center; margin-top:1rem; font-size:.7rem; letter-spacing:.6p
 .spark-loading { height:18px; margin-top:.3rem; }
 .spark-empty { font-size:.6rem; color:#64748b; margin-top:.25rem; }
 
+/* Mini macros block */
+.macro-mini { margin-top:.6rem; display:flex; flex-direction:column; gap:.35rem; }
+.macro-mini-row { display:grid; grid-template-columns:64px 1fr auto; align-items:center; gap:.55rem; font-size:.65rem; background:rgba(255,255,255,.05); padding:.35rem .55rem; border-radius:8px; }
+.macro-mini-row .mm-label { color:#94a3b8; letter-spacing:.5px; text-transform:uppercase; font-weight:600; }
+.macro-mini-row .mm-bar { position:relative; height:6px; background:rgba(255,255,255,.08); border-radius:4px; overflow:hidden; }
+.macro-mini-row .mm-fill { position:absolute; inset:0 0 0 0; width:0%; background:linear-gradient(90deg,#34d399,#2dd4bf); transition: width .7s cubic-bezier(.4,.4,.2,1); }
+.macro-mini-row .mm-fill.carbs { background:linear-gradient(90deg,#60a5fa,#3b82f6); }
+.macro-mini-row .mm-fill.fat { background:linear-gradient(90deg,#fbbf24,#f59e0b); }
+.macro-mini-row .mm-val { font-weight:600; font-size:.65rem; }
+.mm-fill.p0 { width:0%; }
+.mm-fill.p5 { width:5%; }
+.mm-fill.p10 { width:10%; }
+.mm-fill.p15 { width:15%; }
+.mm-fill.p20 { width:20%; }
+.mm-fill.p25 { width:25%; }
+.mm-fill.p30 { width:30%; }
+.mm-fill.p35 { width:35%; }
+.mm-fill.p40 { width:40%; }
+.mm-fill.p45 { width:45%; }
+.mm-fill.p50 { width:50%; }
+.mm-fill.p55 { width:55%; }
+.mm-fill.p60 { width:60%; }
+.mm-fill.p65 { width:65%; }
+.mm-fill.p70 { width:70%; }
+.mm-fill.p75 { width:75%; }
+.mm-fill.p80 { width:80%; }
+.mm-fill.p85 { width:85%; }
+.mm-fill.p90 { width:90%; }
+.mm-fill.p95 { width:95%; }
+.mm-fill.p100 { width:100%; }
+
+/* Achievements */
+.ach-block { margin-top:.8rem; }
+.ach-title { font-size:.6rem; letter-spacing:.5px; text-transform:uppercase; color:#94a3b8; margin-bottom:.3rem; }
+.ach-list { display:flex; flex-wrap:wrap; gap:.4rem; }
+.ach-badge { font-size:.55rem; padding:.28rem .5rem .32rem; border-radius:10px; letter-spacing:.5px; background:rgba(255,255,255,.07); color:#d1d5db; border:1px solid rgba(255,255,255,.12); font-weight:600; text-transform:uppercase; }
+.ach-badge.done { background:linear-gradient(135deg,#059669,#10b981); color:#ecfdf5; border-color:#047857; }
+
 .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.55); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); display:flex; justify-content:center; align-items:flex-start; padding:5vh 1rem; z-index:50; }
 .modal { background:rgba(20,24,32,.9); border:1px solid rgba(255,255,255,.08); border-radius:24px; padding:1.8rem 1.6rem 2.1rem; width:min(880px,100%); box-shadow:0 10px 40px -10px rgba(0,0,0,.6); }
 .modal h2 { margin:0 0 1.2rem; font-size:1.4rem; background:var(--accent-grad); -webkit-background-clip:text; background-clip:text; color:transparent; }

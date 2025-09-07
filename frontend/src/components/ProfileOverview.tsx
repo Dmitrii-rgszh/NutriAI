@@ -8,6 +8,11 @@ interface OverviewData {
   streak: { current_days:number; longest_days:number }
   achievements: any[]
   recent_meals: { id:number; food_name:string; calories:number }[]
+  macros?: {
+    protein: { value:number; target:number; percent:number|null }
+    carbs: { value:number; target:number; percent:number|null }
+    fat: { value:number; target:number; percent:number|null }
+  }
 }
 
 interface WeightHistoryPoint { date: string; weight_kg: number }
@@ -84,6 +89,31 @@ export default function ProfileOverview() {
         <div className="k-row"><span>Вода</span><strong>{data.today.water_l.value || 0} / {data.today.water_l.target || '—'} л</strong></div>
         <div className="k-row"><span>Сон</span><strong>{data.today.sleep_h.value || '—'} ч</strong></div>
       </div>
+      {data.macros && (
+        <div className="macro-mini">
+          {(['protein','carbs','fat'] as const).map(key=>{
+            const m = (data.macros as any)[key]
+            const pctRaw = typeof m.percent==='number'? Math.min(100, Math.max(0, m.percent)) : 0
+            const pct = Math.round(pctRaw/5)*5
+            const title = key==='protein'? 'Белок' : key==='carbs'? 'Углеводы' : 'Жиры'
+            return (
+              <div key={key} className="macro-mini-row" data-pct={pct}>
+                <span className="mm-label">{title}</span>
+                <div className="mm-bar"><span className={`mm-fill ${key} p${pct}`}></span></div>
+                <strong className="mm-val">{m.value}/{m.target}</strong>
+              </div>
+            )
+          })}
+        </div>
+      )}
+      {data.achievements && data.achievements.length>0 && (
+        <div className="ach-block">
+          <div className="ach-title">Достижения</div>
+          <div className="ach-list">
+            {data.achievements.map(a=> <span key={a.id} className="ach-badge done">{a.title}</span>)}
+          </div>
+        </div>
+      )}
       <div className="spark-wrap mt-04">
         <div className="spark-head">
           <span className="spark-label">Вес 30д</span>
