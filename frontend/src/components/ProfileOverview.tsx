@@ -10,17 +10,35 @@ interface OverviewData {
   recent_meals: { id:number; food_name:string; calories:number }[]
 }
 
+interface WeightHistoryPoint { date: string; weight_kg: number }
+
 export default function ProfileOverview() {
   const [data,setData] = useState<OverviewData|null>(null)
   const [loading,setLoading] = useState(true)
   const [error,setError] = useState<string|null>(null)
   const [adding,setAdding] = useState(false)
+  const [history,setHistory] = useState<WeightHistoryPoint[]>([])
+  const [historyLoading,setHistoryLoading] = useState(false)
   const [weight,setWeight] = useState('')
   const [water,setWater] = useState('')
   const [sleep,setSleep] = useState('')
 
   async function load() {
-    try { setLoading(true); setError(null); const d = await api.profileOverview(); setData(d) } catch(e:any){ setError(e.message) } finally { setLoading(false) }
+    try {
+      setLoading(true); setError(null)
+      const d = await api.profileOverview();
+      setData(d)
+      // Параллельно загрузим историю веса
+      setHistoryLoading(true)
+      try {
+        const wh = await api.weightHistory(30)
+        setHistory(Array.isArray(wh)? wh : [])
+      } finally { setHistoryLoading(false) }
+    } catch(e:any){
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
   }
   useEffect(()=>{ load() },[])
 
@@ -40,6 +58,22 @@ export default function ProfileOverview() {
 
   const cal = data.today.calories
   const weightBlock = data.weight
+
+  // Подготовка данных спарклайна
+  let sparkPath = ''
+  if (history.length >= 2) {
+    const values = history.map(h=>h.weight_kg)
+    const min = Math.min(...values)
+    const max = Math.max(...values)
+    const range = max - min || 1
+    const w = 120
+    const h = 32
+    sparkPath = history.map((pt,idx)=>{
+      const x = (idx/(history.length-1))*w
+      const y = h - ((pt.weight_kg - min)/range)*h
+      return `${idx===0?'M':'L'}${x.toFixed(1)},${y.toFixed(1)}`
+    }).join(' ')
+  }
   return (
     <div className="card fade-in profile-overview">
       <h2>Профиль</h2>
@@ -49,6 +83,19 @@ export default function ProfileOverview() {
         {weightBlock && <div className="k-row"><span>Вес</span><strong>{weightBlock.current} кг {weightBlock.diff_from_prev!=null && <em className={weightBlock.diff_from_prev<0?'delta-neg':'delta-pos'}>{weightBlock.diff_from_prev>0?'+':''}{weightBlock.diff_from_prev.toFixed(1)}</em>}</strong></div>}
         <div className="k-row"><span>Вода</span><strong>{data.today.water_l.value || 0} / {data.today.water_l.target || '—'} л</strong></div>
         <div className="k-row"><span>Сон</span><strong>{data.today.sleep_h.value || '—'} ч</strong></div>
+      </div>
+      <div className="spark-wrap mt-04">
+        <div className="spark-head">
+          <span className="spark-label">Вес 30д</span>
+          {history.length>0 && !historyLoading && <span className="spark-range">{history[0].weight_kg.toFixed(1)} → {history[history.length-1].weight_kg.toFixed(1)}</span>}
+        </div>
+        {historyLoading && <div className="skeleton sk-line spark-loading" />}
+        {!historyLoading && history.length>=2 && (
+          <svg className="sparkline" width={120} height={32} viewBox="0 0 120 32" preserveAspectRatio="none">
+            <path d={sparkPath} fill="none" stroke="#34d399" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+          </svg>
+        )}
+        {!historyLoading && history.length<2 && <div className="spark-empty">Недостаточно данных</div>}
       </div>
       <div className="controls-row mt-1">
         <input className="select" placeholder="Вес кг" value={weight} onChange={e=>setWeight(e.target.value)} />
