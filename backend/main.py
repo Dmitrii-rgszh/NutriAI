@@ -418,6 +418,9 @@ class OverviewResponse(_BM):
     achievements: List[dict]
     recent_meals: List[dict]
     macros: Optional[dict] = None
+    next_tip: Optional[str] = None
+    day_score: Optional[int] = None
+    meals_grouped: Optional[dict] = None
 
 @app.post('/profile/weight', response_model=WeightEntryOut)
 async def add_weight(entry: WeightEntryIn, current: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -549,6 +552,80 @@ async def profile_overview(current: User = Depends(get_current_user), db: Sessio
     if log and log.sleep_h and log.sleep_h >= 8: ach.append({'id':'sleep_8h','title':'Сон 8 часов'})
     w_today = db.query(WeightEntry).filter(WeightEntry.user_id==current.id, WeightEntry.date==today).first()
     if w_today: ach.append({'id':'weight_logged','title':'Вес обновлён'})
+    # Meals grouped (today)
+    meals_grouped = None
+    if today_meals:
+        groups = {}
+        for m in today_meals:
+            mt = m.meal_type or 'other'
+            if mt not in groups:
+                groups[mt] = { 'count': 0, 'calories': 0, 'protein': 0.0, 'carbs': 0.0, 'fat': 0.0 }
+            g = groups[mt]
+            g['count'] += 1
+            g['calories'] += m.calories or 0
+            g['protein'] += m.protein or 0
+            g['carbs'] += m.carbs or 0
+            g['fat'] += m.fat or 0
+        # round macro sums
+        for v in groups.values():
+            v['protein'] = round(v['protein'],1)
+            v['carbs'] = round(v['carbs'],1)
+            v['fat'] = round(v['fat'],1)
+        meals_grouped = groups
+
+    # Day score (0-100) simple heuristic
+    day_score = None
+    if log:
+        score = 0
+        # Calories component (0-40)
+        if cal_target and calories:
+            pct = calories / cal_target
+            if 0.9 <= pct <= 1.05: score += 40
+            elif (0.8 <= pct < 0.9) or (1.05 < pct <= 1.15): score += 30
+            elif (0.6 <= pct < 0.8) or (1.15 < pct <= 1.3): score += 20
+            else: score += 10
+        # Water (0-20)
+        if current.water_intake:
+            wv = (log.water_l or 0)
+            w_pct = (wv / current.water_intake) if current.water_intake else 0
+            if w_pct >= 1: score += 20
+            else: score += int(min(w_pct,1)*20)
+        # Sleep (0-15)
+        if log.sleep_h:
+            sh = log.sleep_h
+            if 7 <= sh <= 9: score += 15
+            elif sh >= 6: score += 10
+            elif sh >= 5: score += 6
+            else: score += 2
+        # Macros (0-25)
+        if macro_block:
+            percents = []
+            for k in ['protein','carbs','fat']:
+                p = macro_block[k]['percent']
+                if p is not None:
+                    percents.append(min(p,100))
+            if percents:
+                avg = sum(percents)/len(percents)
+                score += int(round(avg/100 * 25))
+        day_score = min(score,100)
+
+    # Next tip logic (server-side)
+    next_tip = None
+    if macro_block:
+        protein_gap = macro_block['protein']['target'] - macro_block['protein']['value'] if macro_block['protein']['target'] else 0
+        fat_pct = macro_block['fat']['percent'] or 0
+        if protein_gap > 15:
+            next_tip = 'Добавьте источник белка (творог / курица / йогурт)'
+        elif fat_pct < 40 and today_block['meals_count'] >= 2:
+            next_tip = 'Немного полезных жиров (орехи / оливковое масло)'
+        elif today_block['calories']['percent'] < 60:
+            next_tip = 'Спланируйте основной приём пищи заранее'
+    if not next_tip and day_score is not None:
+        if day_score >= 80:
+            next_tip = 'Отличный прогресс! Поддерживайте темп'
+        elif day_score < 50:
+            next_tip = 'Сконцентрируйтесь на базовых целях: калории, вода, сон'
+
     return OverviewResponse(
         user={'id': current.id, 'telegram_id': current.telegram_id, 'goal': current.goal, 'gender': current.gender},
         today=today_block,
@@ -556,5 +633,8 @@ async def profile_overview(current: User = Depends(get_current_user), db: Sessio
         streak=streak,
         achievements=ach,
         recent_meals=recent_meals,
-        macros=macro_block
+        macros=macro_block,
+        next_tip=next_tip,
+        day_score=day_score,
+        meals_grouped=meals_grouped
     )

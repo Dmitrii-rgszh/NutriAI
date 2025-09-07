@@ -13,6 +13,9 @@ interface OverviewData {
     carbs: { value:number; target:number; percent:number|null }
     fat: { value:number; target:number; percent:number|null }
   }
+  next_tip?: string | null
+  day_score?: number | null
+  meals_grouped?: Record<string, { count:number; calories:number; protein:number; carbs:number; fat:number }>
 }
 
 interface WeightHistoryPoint { date: string; weight_kg: number }
@@ -63,14 +66,7 @@ export default function ProfileOverview() {
 
   const cal = data.today.calories
   const weightBlock = data.weight
-  const mealsCount = data.today.meals_count || 0
-  let suggestion: string | null = null
-  if (data.macros) {
-    const proteinGap = data.macros.protein.target - data.macros.protein.value
-    if (proteinGap > 15) suggestion = 'Добавьте белок (творог / курица / йогурт)'
-    else if (data.macros.fat.percent && data.macros.fat.percent < 40 && mealsCount>=2) suggestion = 'Немного полезных жиров (орехи / оливковое масло)'
-    else if (data.today.calories.percent < 60) suggestion = 'Основной приём пищи впереди — спланируйте тарелку'
-  }
+  const suggestion = data.next_tip || null
 
   // Подготовка данных спарклайна
   let sparkPath = ''
@@ -96,8 +92,72 @@ export default function ProfileOverview() {
         {weightBlock && <div className="k-row"><span>Вес</span><strong>{weightBlock.current} кг {weightBlock.diff_from_prev!=null && <em className={weightBlock.diff_from_prev<0?'delta-neg':'delta-pos'}>{weightBlock.diff_from_prev>0?'+':''}{weightBlock.diff_from_prev.toFixed(1)}</em>}</strong></div>}
         <div className="k-row"><span>Вода</span><strong>{data.today.water_l.value || 0} / {data.today.water_l.target || '—'} л</strong></div>
         <div className="k-row"><span>Сон</span><strong>{data.today.sleep_h.value || '—'} ч</strong></div>
+        {typeof data.day_score === 'number' && <div className="k-row"><span>Оценка</span><strong>{data.day_score}</strong></div>}
       </div>
+      {typeof data.day_score === 'number' && (
+        <div className="score-section">
+          {(() => {
+            const score = data.day_score || 0
+            const r = 50
+            const stroke = 8
+            const normR = r - stroke/2
+            const circ = 2 * Math.PI * normR
+            const offset = circ - (score/100)*circ
+            const cls = score>=80? 'good' : score>=55? 'mid' : 'low'
+            return (
+              <div className={`score-gauge ${cls}`}>
+                <svg viewBox={`0 0 ${r*2} ${r*2}`}> 
+                  <circle cx={r} cy={r} r={normR} stroke="rgba(255,255,255,.1)" strokeWidth={stroke} fill="none" />
+                  <circle cx={r} cy={r} r={normR} stroke="url(#gradScore)" strokeWidth={stroke} fill="none" strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round" className="sg-progress" />
+                  <defs>
+                    <linearGradient id="gradScore" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#34d399" />
+                      <stop offset="50%" stopColor="#2dd4bf" />
+                      <stop offset="100%" stopColor="#60a5fa" />
+                    </linearGradient>
+                  </defs>
+                </svg>
+                <div className="sg-label"><div>День</div><div className="sg-value">{score}</div></div>
+              </div>
+            )
+          })()}
+          {data.macros && (
+            <div className="macro-rings">
+              {(['protein','carbs','fat'] as const).map(key => {
+                const m = (data.macros as any)[key]
+                const pct = Math.min(100, Math.max(0, m.percent || 0))
+                const r = 34
+                const stroke = 7
+                const normR = r - stroke/2
+                const circ = 2 * Math.PI * normR
+                const offset = circ - (pct/100)*circ
+                const label = key==='protein'? 'Белок' : key==='carbs'? 'Угл' : 'Жир'
+                return (
+                  <div key={key} className={`macro-ring ${key}`}>
+                    <svg viewBox={`0 0 ${r*2} ${r*2}`}>
+                      <circle cx={r} cy={r} r={normR} stroke="rgba(255,255,255,.08)" strokeWidth={stroke} fill="none" />
+                      <circle cx={r} cy={r} r={normR} stroke={key==='protein'? '#34d399': key==='carbs'? '#60a5fa':'#fbbf24'} strokeWidth={stroke} fill="none" strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round" className="mr-progress" />
+                    </svg>
+                    <div className="mr-label"><span>{label}</span><span className="mr-value">{pct.toFixed(0)}%</span></div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
   {suggestion && <div className="mini-msg suggest-tip mt-04">{suggestion}</div>}
+      {data.meals_grouped && (
+        <div className="macro-mini mt-04">
+          {Object.entries(data.meals_grouped).map(([mt,g])=> (
+            <div key={mt} className="macro-mini-row meal-group-row">
+              <span className="mm-label">{mt}</span>
+              <div className="mm-bar"><span className="mm-fill group"></span></div>
+              <strong className="mm-val">{g.calories}ккал ({g.count})</strong>
+            </div>
+          ))}
+        </div>
+      )}
       {data.macros && (
         <div className="macro-mini">
           {(['protein','carbs','fat'] as const).map(key=>{

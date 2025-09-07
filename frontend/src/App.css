@@ -228,6 +228,29 @@ footer { text-align:center; margin-top:1rem; font-size:.7rem; letter-spacing:.6p
 .ach-badge { font-size:.55rem; padding:.28rem .5rem .32rem; border-radius:10px; letter-spacing:.5px; background:rgba(255,255,255,.07); color:#d1d5db; border:1px solid rgba(255,255,255,.12); font-weight:600; text-transform:uppercase; }
 .ach-badge.done { background:linear-gradient(135deg,#059669,#10b981); color:#ecfdf5; border-color:#047857; }
 
+/* Meal groups (overview) */
+.meal-group-row { grid-template-columns:80px 1fr auto; }
+.mm-fill.group { width:100%; background:linear-gradient(90deg,#4ade80,#2dd4bf); }
+
+/* Day score & macro rings */
+.score-section { display:flex; flex-wrap:wrap; gap:1rem; align-items:center; margin-top:.8rem; }
+.score-gauge { position:relative; width:110px; height:110px; }
+.score-gauge svg { width:100%; height:100%; filter: drop-shadow(0 4px 10px rgba(0,0,0,.5)); }
+.score-gauge .sg-label { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; font-size:.55rem; letter-spacing:.5px; text-transform:uppercase; color:#94a3b8; }
+.score-gauge .sg-value { font-size:1.1rem; font-weight:600; color:#e2e8f0; margin-top:.15rem; }
+.score-gauge.good .sg-value { color:#34d399; }
+.score-gauge.mid .sg-value { color:#fbbf24; }
+.score-gauge.low .sg-value { color:#f87171; }
+.macro-rings { display:flex; gap:.9rem; flex:1; }
+.macro-ring { position:relative; width:70px; height:70px; }
+.macro-ring svg { width:100%; height:100%; }
+.macro-ring .mr-label { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; font-size:.45rem; letter-spacing:.5px; text-transform:uppercase; color:#94a3b8; line-height:.6rem; }
+.macro-ring .mr-value { font-size:.7rem; font-weight:600; color:#e2e8f0; }
+.macro-ring.protein .mr-value { color:#34d399; }
+.macro-ring.carbs .mr-value { color:#60a5fa; }
+.macro-ring.fat .mr-value { color:#fbbf24; }
+.sg-progress, .mr-progress { transition: stroke-dashoffset .8s ease; }
+
 .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.55); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); display:flex; justify-content:center; align-items:flex-start; padding:5vh 1rem; z-index:50; }
 .modal { background:rgba(20,24,32,.9); border:1px solid rgba(255,255,255,.08); border-radius:24px; padding:1.8rem 1.6rem 2.1rem; width:min(880px,100%); box-shadow:0 10px 40px -10px rgba(0,0,0,.6); }
 .modal h2 { margin:0 0 1.2rem; font-size:1.4rem; background:var(--accent-grad); -webkit-background-clip:text; background-clip:text; color:transparent; }
