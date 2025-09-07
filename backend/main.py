@@ -3,13 +3,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from .database import SessionLocal, engine
-from .models import Base, User, Meal, DailyLog
+from .models import Base, User, Meal, DailyLog, WeightEntry
 from .schemas import (
     UserCreate, UserOut, UserProfileUpdate, DailySummary, HistoryResponse, HistoryDay,
     WeightForecastResponse, WeightForecastPoint, MacroGoals,
     PhotoMealResponse, PhotoAnalysisResult
 )
 from .meal_schemas import MealCreate, MealOut, MealUpdate
+from .utils import recalc_energy
 from .config import get_settings
 import hmac, hashlib, urllib.parse, time, json
 import jwt  # type: ignore
@@ -149,37 +150,10 @@ async def create_or_update_user(payload: UserCreate, db: Session = Depends(get_d
     if not user:
         user = User(telegram_id=payload.telegram_id)
         db.add(user)
-    # Update fields
     for field, value in payload.model_dump(exclude={"telegram_id"}).items():
         if value is not None:
             setattr(user, field, value)
-    # Recalculate BMR/TDEE if weight/height/age/gender/activity/goal present
-    if user.age and user.gender and user.height and user.weight:
-        # Mifflin-St Jeor
-        if user.gender == 'male':
-            bmr = 10 * user.weight + 6.25 * user.height - 5 * user.age + 5
-        else:
-            bmr = 10 * user.weight + 6.25 * user.height - 5 * user.age - 161
-        activity_map = {
-            'sedentary': 1.2,
-            'light': 1.375,
-            'moderate': 1.55,
-            'active': 1.725,
-            'very_active': 1.9
-        }
-        factor = activity_map.get(user.activity_level or 'sedentary', 1.2)
-        tdee = bmr * factor
-        # Goal adjustment
-        goal_adjust = {
-            'lose_weight': -0.20,
-            'maintain': 0.0,
-            'gain_weight': 0.15
-        }
-        adj = goal_adjust.get(user.goal or 'maintain', 0.0)
-        daily = tdee * (1 + adj)
-        user.bmr = round(bmr, 1)
-        user.tdee = round(tdee, 1)
-        user.daily_calories = round(daily, 0)
+    recalc_energy(user)
     db.commit(); db.refresh(user)
     return user
 
@@ -203,46 +177,7 @@ async def update_profile(payload: UserProfileUpdate, current: User = Depends(get
             else:
                 setattr(user, field, value)
     
-    # Recalculate BMR/TDEE if necessary data is present
-    if user.age and user.gender and user.height and user.weight:
-        # Mifflin-St Jeor equation
-        if user.gender == 'male':
-            bmr = 10 * user.weight + 6.25 * user.height - 5 * user.age + 5
-        elif user.gender == 'female':
-            bmr = 10 * user.weight + 6.25 * user.height - 5 * user.age - 161
-        else:  # other
-            # Use average of male/female formulas
-            bmr_male = 10 * user.weight + 6.25 * user.height - 5 * user.age + 5
-            bmr_female = 10 * user.weight + 6.25 * user.height - 5 * user.age - 161
-            bmr = (bmr_male + bmr_female) / 2
-        
-        # Calculate TDEE using activity multiplier or default values
-        if user.activity_multiplier:
-            factor = user.activity_multiplier
-        else:
-            activity_map = {
-                'sedentary': 1.2,
-                'light': 1.375,
-                'moderate': 1.55,
-                'active': 1.725,
-                'very_active': 1.9
-            }
-            factor = activity_map.get(user.activity_level or 'sedentary', 1.2)
-        
-        tdee = bmr * factor
-        
-        # Goal adjustment for daily calories
-        goal_adjust = {
-            'lose': -0.20,  # 20% deficit
-            'maintain': 0.0,
-            'gain': 0.15   # 15% surplus
-        }
-        adj = goal_adjust.get(user.goal or 'maintain', 0.0)
-        daily = tdee * (1 + adj)
-        
-        user.bmr = round(bmr, 1)
-        user.tdee = round(tdee, 1)
-        user.daily_calories = round(daily, 0)
+    recalc_energy(user)
     
     db.commit()
     db.refresh(user)
@@ -301,13 +236,12 @@ async def create_demo_user(db: Session = Depends(get_db)):
 
 def _recalc_today_log(db: Session, user: User):
     from datetime import datetime
+    from sqlalchemy import func as sa_func
     today = datetime.utcnow().strftime('%Y-%m-%d')
-    # Sum only today's meals
-    meals_today = db.query(Meal).filter(Meal.user_id==user.id).all()
-    total = 0
-    for m in meals_today:
-        if m.created_at and m.created_at.strftime('%Y-%m-%d') == today:
-            total += m.calories
+    total = db.query(sa_func.coalesce(sa_func.sum(Meal.calories), 0)).filter(
+        Meal.user_id==user.id,
+        sa_func.strftime('%Y-%m-%d', Meal.created_at)==today
+    ).scalar()
     log = db.query(DailyLog).filter(DailyLog.user_id==user.id, DailyLog.date==today).first()
     if not log:
         log = DailyLog(user_id=user.id, date=today)
@@ -446,4 +380,140 @@ async def macro_goals(current: User = Depends(get_current_user)):
         fat_pct=round(fat_pct,1),
         carbs_pct=round(carbs_pct,1),
         method="protein_1.7g_per_kg_fat28pct"
+    )
+
+# ---- Profile Extensions ----
+from pydantic import BaseModel as _BM
+from datetime import datetime as _dt
+
+def _today():
+    return _dt.utcnow().strftime('%Y-%m-%d')
+
+class WeightEntryIn(_BM):
+    date: Optional[str] = None  # YYYY-MM-DD
+    weight_kg: float
+    source: Optional[str] = "manual"
+
+class WeightEntryOut(_BM):
+    date: str
+    weight_kg: float
+    source: Optional[str]
+
+class WeightHistoryResponse(_BM):
+    entries: List[WeightEntryOut]
+
+class WaterIntakeIn(_BM):
+    amount_l: float
+    date: Optional[str] = None
+
+class SleepLogIn(_BM):
+    hours: float
+    date: Optional[str] = None
+
+class OverviewResponse(_BM):
+    user: dict
+    today: dict
+    weight: Optional[dict]
+    streak: dict
+    achievements: List[dict]
+    recent_meals: List[dict]
+
+@app.post('/profile/weight', response_model=WeightEntryOut)
+async def add_weight(entry: WeightEntryIn, current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    date = entry.date or _today()
+    we = db.query(WeightEntry).filter(WeightEntry.user_id==current.id, WeightEntry.date==date).first()
+    if not we:
+        we = WeightEntry(user_id=current.id, date=date, weight_kg=entry.weight_kg, source=entry.source)
+        db.add(we)
+    else:
+        we.weight_kg = entry.weight_kg
+        we.source = entry.source or we.source
+    if date == _today():
+        current.weight = entry.weight_kg
+        recalc_energy(current)
+    db.commit(); db.refresh(we)
+    return WeightEntryOut(date=we.date, weight_kg=we.weight_kg, source=we.source)
+
+@app.get('/profile/weight/history', response_model=WeightHistoryResponse)
+async def weight_history(days: int = 30, current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    days = min(max(days,1), 120)
+    q = db.query(WeightEntry).filter(WeightEntry.user_id==current.id).order_by(WeightEntry.date.desc()).limit(days).all()
+    return WeightHistoryResponse(entries=[WeightEntryOut(date=w.date, weight_kg=w.weight_kg, source=w.source) for w in reversed(q)])
+
+@app.post('/profile/water')
+async def add_water(payload: WaterIntakeIn, current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    date = payload.date or _today()
+    log = db.query(DailyLog).filter(DailyLog.user_id==current.id, DailyLog.date==date).first()
+    if not log:
+        log = DailyLog(user_id=current.id, date=date, calories=0)
+        db.add(log)
+    log.water_l = (log.water_l or 0) + payload.amount_l
+    db.commit()
+    return {"date": date, "water_l": log.water_l}
+
+@app.post('/profile/sleep')
+async def set_sleep(payload: SleepLogIn, current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    date = payload.date or _today()
+    log = db.query(DailyLog).filter(DailyLog.user_id==current.id, DailyLog.date==date).first()
+    if not log:
+        log = DailyLog(user_id=current.id, date=date, calories=0)
+        db.add(log)
+    log.sleep_h = payload.hours
+    db.commit()
+    return {"date": date, "sleep_h": log.sleep_h}
+
+@app.get('/profile/overview', response_model=OverviewResponse)
+async def profile_overview(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    today = _today()
+    log = db.query(DailyLog).filter(DailyLog.user_id==current.id, DailyLog.date==today).first()
+    if not log:
+        _recalc_today_log(db, current)
+        log = db.query(DailyLog).filter(DailyLog.user_id==current.id, DailyLog.date==today).first()
+    meals = db.query(Meal).filter(Meal.user_id==current.id).order_by(Meal.created_at.desc()).limit(5).all()
+    recent_meals = [ { 'id': m.id, 'food_name': m.food_name, 'calories': m.calories } for m in meals ]
+    wq = db.query(WeightEntry).filter(WeightEntry.user_id==current.id).order_by(WeightEntry.date.desc()).limit(2).all()
+    weight_block = None
+    if wq:
+        last = wq[0]
+        prev = wq[1] if len(wq) > 1 else None
+        diff = (last.weight_kg - prev.weight_kg) if prev else None
+        weight_block = {
+            'current': last.weight_kg,
+            'diff_from_prev': diff,
+            'target': current.target_weight
+        }
+    # streak
+    from datetime import timedelta as _td, datetime as _dt2
+    streak_days = 0
+    d_cursor = _dt2.utcnow().date()
+    for _ in range(120):
+        ds = d_cursor.strftime('%Y-%m-%d')
+        l = db.query(DailyLog).filter(DailyLog.user_id==current.id, DailyLog.date==ds).first()
+        if l and l.calories and l.calories > 0:
+            streak_days += 1
+            d_cursor = d_cursor - _td(days=1)
+        else:
+            break
+    streak = { 'current_days': streak_days, 'longest_days': streak_days }
+    cal_target = current.daily_calories
+    calories = log.calories if log else 0
+    percent = round((calories / cal_target * 100),1) if cal_target else 0
+    zone = 'ok'
+    if cal_target:
+        if percent < 90: zone = 'under'
+        elif percent > 105: zone = 'over'
+    today_block = {
+        'date': today,
+        'calories': { 'value': calories, 'target': cal_target, 'percent': percent, 'zone': zone },
+        'water_l': { 'value': (log.water_l if log else 0), 'target': current.water_intake, 'percent': ((log.water_l / current.water_intake *100) if log and log.water_l and current.water_intake else None) },
+        'sleep_h': { 'value': (log.sleep_h if log else None), 'target': 8 }
+    }
+    ach = []
+    return OverviewResponse(
+        user={'id': current.id, 'telegram_id': current.telegram_id, 'goal': current.goal, 'gender': current.gender},
+        today=today_block,
+        weight=weight_block,
+        streak=streak,
+        achievements=ach,
+        recent_meals=recent_meals
     )

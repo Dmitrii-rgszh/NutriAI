@@ -70,5 +70,20 @@ class DailyLog(Base):
     calories = Column(Float, default=0)
     target = Column(Float, nullable=True)
     deficit = Column(Float, nullable=True)
+    water_l = Column(Float, nullable=True)  # суммарное потребление воды за день
+    sleep_h = Column(Float, nullable=True)  # часы сна (фиксируется раз в день)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+class WeightEntry(Base):
+    __tablename__ = "weight_entries"
+    __table_args__ = (UniqueConstraint('user_id','date', name='uq_user_weight_date'),)
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    date = Column(String, index=True)  # YYYY-MM-DD (UTC)
+    weight_kg = Column(Float, nullable=False)
+    source = Column(String, nullable=True)  # manual / imported / device
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
